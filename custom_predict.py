@@ -12,7 +12,9 @@ import matplotlib.pyplot as plt
 import time
 from sklearn.cluster import MeanShift,DBSCAN
 import hdbscan
-import cv2,io
+import cv2,io,random,os
+import argparse
+import csaps
 
 from models.lanenet import LaneNet
 
@@ -20,19 +22,20 @@ from models.lanenet import LaneNet
 batch_size = 1
 
 #model load
-model = torch.load("./ckpt/recent_line.pth").eval().cuda()
+model = torch.load("./ckpt/recent_line.pth").eval()
 model_name = model.__class__.__name__
 
-hdbscan_cluster = hdbscan.HDBSCAN(min_cluster_size=50,allow_single_cluster=False)
+hdbscan_cluster = hdbscan.HDBSCAN(min_cluster_size=100,allow_single_cluster=False)
 frame_array = list()
 
 #img = plt.imread('/home/yo0n/workspace2/KCITY/kcity/images/1597891859696844752.jpg')
-img = plt.imread('/home/yo0n/workspace2/KCITY/kcity/images/1597892845576853497.jpg')
+images_folders = ['/home/yo0n/workspace2/KCITY/kcity/images/'+i for i in os.listdir('/home/yo0n/workspace2/KCITY/kcity/images') if i!=".DS_Store"]
+img = plt.imread(images_folders[random.randint(0,len(images_folders))])
 #img = np.pad(img, ((8,8), (0,0), (0, 0)), 'constant')
 #img = cv2.resize(img, dsize=(640,368), interpolation=cv2.INTER_AREA)
 img = torch.tensor(img).unsqueeze(0)
 img = img.permute(0,3,1,2).float()/255.
-img = img.cuda()
+img,model = img.cuda(), model.cuda() #img.cuda(), model.cuda()
 
 start =time.time()
 binary_pred, instance_pred = model(img)
@@ -64,6 +67,11 @@ img = img#+ np.array([0.485, 0.456, 0.406])
 mask = np.stack([instance_final for i in range(3)], axis=-1)
 lanes = np.unique(instance_final).shape[0]
 
+for i in range(1,lanes):
+    laneCoord = np.where(instance_final==i)
+    print(i,len(laneCoord[0]), laneCoord[0].shape)
+
+plt.title(str(lanes))
 plt.imshow(img)
-plt.imshow(instance_final, alpha=0.3)
+plt.imshow(instance_final, alpha=0.5)
 plt.show()

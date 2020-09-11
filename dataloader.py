@@ -17,7 +17,8 @@ warnings.filterwarnings("ignore")
 class TUSimple(Dataset):
     def __init__(self, path, transform = None):
         self.path = path
-        self.LINE_SIZE = 30
+        self.LINE_SIZE = 15
+        self.PAD = 120
         self.transform = transform
         sub    = [i for i in os.listdir(self.path) if i!=".DS_Store"]
         labels = [self.path + "/" + i for i in sub if i[-4:]=="json"]
@@ -57,16 +58,16 @@ class TUSimple(Dataset):
         lane_cnt = lanes_w.shape[0]
 
         image = plt.imread(image_path) #(720, 1280, 3)
-        image=np.pad(image, ((8,8), (0,0), (0, 0)), 'constant')
-        image = cv2.resize(image, dsize=(640,368), interpolation=cv2.INTER_AREA)
+        image=np.pad(image, ((self.PAD,self.PAD), (0,0), (0, 0)), 'constant')
+        image = cv2.resize(image, dsize=(640,480), interpolation=cv2.INTER_AREA)
         hmap = np.zeros(image.shape[:2])
 
         lane_pair = list()
         point = 0
         for i in range(lane_cnt):
             mask = (lanes_w[i,:] * lanes_h) > 0
-            xs = (lanes_w[i,:][mask]-8) /1280. * 640.
-            ys = lanes_h[mask] /728. * 368.
+            xs = (lanes_w[i,:][mask]) /1280. * 640.
+            ys = (lanes_h[mask]+self.PAD) /960. * 480.
             ys = np.clip(ys, 0, 639)
             for j in range(xs.shape[0]):
                 try:
@@ -82,16 +83,19 @@ class TUSimple(Dataset):
         instance = hmap
 
         if self.transform:
-            augmented = self.transform(image=image, mask=instance)
+            augmented = self.transform(image=image, masks=[instance])
 
             image = augmented['image']
-            instance = augmented['mask']
+            instance = augmented['masks'][0]
 
 
         binary = np.where(instance>0, 1, 0)
 
-        show = True
+        show = False
         if show:
+            plt.imshow(image)
+            plt.imshow(hmap, alpha=0.5)
+            """
             plt.subplot(4,1,1)
             plt.imshow(image)
             plt.subplot(4,1,2)
@@ -101,6 +105,7 @@ class TUSimple(Dataset):
             plt.imshow(instance)
             plt.subplot(4,1,4)
             plt.imshow(binary)
+            """
             plt.show()
 
         return image, binary, instance
@@ -222,7 +227,7 @@ class KcityLane2(Dataset):
 
         self.classMap = {'lane' : 1, 'lane0':2, 'center':3}
 
-        self.LINE_SIZE = 10
+        self.LINE_SIZE = 15
 
     def __len__(self):
         return len(self.labels_path)
@@ -238,7 +243,7 @@ class KcityLane2(Dataset):
         with open(label_path) as f:
             polys = json.load(f)['shapes']
 
-        image = plt.imread(image_path) #(720, 1280, 3)
+        image = plt.imread(image_path) #(480, 640, 3)
         #image = np.pad(image, ((8,8), (0,0), (0, 0)), 'constant')
         #image = cv2.resize(image, dsize=(640,368), interpolation=cv2.INTER_AREA)
         mask_center  = np.zeros(image.shape[:2])
@@ -423,6 +428,24 @@ class Kookmin(Dataset):
 
         return image, mask2
 
+class LaneMerge(Dataset):
+    def __init__(self, aug):
+        self.dataset0 = KcityLane2(image_path = '/home/yo0n/workspace2/KCITY/kcity/images',
+                            label_path = '/home/yo0n/workspace2/KCITY/kcity/label_lane',
+                            transform = aug)
+        self.dataset1 = TUSimple(path='/home/yo0n/바탕화면/TUsimple' ,transform=aug)
+
+    def __len__(self):
+        return len(self.dataset0) + len(self.dataset1)
+
+    def __getitem__(self, idx):
+        if(idx < len(self.dataset0)):
+            return self.dataset0[idx]
+        elif(idx >= len(self.dataset0)):
+            return self.dataset1[idx-len(self.dataset0)]
+        else:
+            print("idx error : ",idx)
+
 def visualize(image, mask, original_image=None, original_mask=None):
     fontsize = 18
 
@@ -452,7 +475,7 @@ if __name__=="__main__":
     from albumentations import *
 
     aug = Compose([
-                 HorizontalFlip(),
+                 #HorizontalFlip(),
                  OneOf([
                     MotionBlur(p=0.2),
                     MedianBlur(blur_limit=3, p=0.1),
@@ -495,7 +518,12 @@ if __name__=="__main__":
     visualize(img_aug, mask_aug, original_image=o[0], original_mask=o[2])
     """
 
+    """
     dataset = KcityLane2(image_path = '/home/yo0n/workspace2/KCITY/kcity/images',
                         label_path = '/home/yo0n/workspace2/KCITY/kcity/label_lane',
                         transform = aug)
+    """
+    dataset = LaneMerge(aug=aug)
+    #o = dataset[1200]
+
     o = dataset[random.randint(0,len(dataset)-1)]
